@@ -2,6 +2,7 @@ package fmclient
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,16 +15,17 @@ import (
 )
 
 type FmClient struct {
-	url string
-	username string
-	password string
-	token string
+	url        string
+	username   string
+	password   string
+	token      string
 	httpClient *http.Client
 }
 
 var defaultLimit = 100
 var defaultLimitString = strconv.Itoa(int(defaultLimit))
-func (c *FmClient) Dump(database, layout string, writer io.Writer) (err error){
+
+func (c *FmClient) Dump(database, layout string, writer io.Writer) (err error) {
 	encoder := json.NewEncoder(writer)
 	offset := 1
 	for {
@@ -48,7 +50,7 @@ func (c *FmClient) GetRecords(database, layout, offset, limit string) (FmReply, 
 	if err != nil {
 		return FmReply{}, err
 	}
-	req.Header.Add("Authorization", "Bearer "+ c.token)
+	req.Header.Add("Authorization", "Bearer "+c.token)
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -61,7 +63,7 @@ func (c *FmClient) GetRecords(database, layout, offset, limit string) (FmReply, 
 		return FmReply{}, err
 	}
 	if len(reply.Messages) > 1 {
-		return FmReply{},  errors.New("multiple errors")
+		return FmReply{}, errors.New("multiple errors")
 	}
 	if len(reply.Messages) < 1 {
 		return FmReply{}, errors.New("unknown errors")
@@ -69,7 +71,7 @@ func (c *FmClient) GetRecords(database, layout, offset, limit string) (FmReply, 
 	if reply.Messages[0].Message != "OK" {
 		return FmReply{}, errors.New(reply.Messages[0].Message)
 	}
-	for rowIndex, row:= range reply.Response.Data {
+	for rowIndex, row := range reply.Response.Data {
 		for fieldName, fieldValue := range row.Fields {
 			if fieldString, isString := fieldValue.(string); isString {
 				var parsedJsonField interface{}
@@ -84,13 +86,13 @@ func (c *FmClient) GetRecords(database, layout, offset, limit string) (FmReply, 
 	return reply, nil
 }
 
-func (c *FmClient) AuthDatabase(database string) (err error){
+func (c *FmClient) AuthDatabase(database string) (err error) {
 	queryUrl := c.url + "/fmi/data/v2/databases/" + database + "/sessions"
-	jsonPayload, err := json.Marshal(struct {}{})
+	jsonPayload, err := json.Marshal(struct{}{})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", queryUrl, bytes.NewReader(jsonPayload) )
+	req, err := http.NewRequest("POST", queryUrl, bytes.NewReader(jsonPayload))
 	if err != nil {
 		return err
 	}
@@ -104,22 +106,20 @@ func (c *FmClient) AuthDatabase(database string) (err error){
 	var reply FmReply
 	err = decoder.Decode(&reply)
 	if err != nil {
-		return  err
+		return err
 	}
 	if len(reply.Messages) > 1 {
-		return  errors.New("multiple errors")
+		return errors.New("multiple errors")
 	}
 	if len(reply.Messages) < 1 {
-		return  errors.New("unknown errors")
+		return errors.New("unknown errors")
 	}
 	if reply.Messages[0].Message != "OK" {
-		return  errors.New(reply.Messages[0].Message)
+		return errors.New(reply.Messages[0].Message)
 	}
 	c.token = reply.Response.Token
-	return  nil
+	return nil
 }
-
-
 
 func GetFmClient(fullUrl string) *FmClient {
 	fmUrl, err := url.Parse(fullUrl)
@@ -140,6 +140,7 @@ func GetFmClient(fullUrl string) *FmClient {
 		password: password,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
+				TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 				ResponseHeaderTimeout: 20 * time.Second,
 				ExpectContinueTimeout: 20 * time.Second,
 			},
@@ -148,7 +149,7 @@ func GetFmClient(fullUrl string) *FmClient {
 	}
 }
 
-func (c *FmClient) GetDatabases() (databases []Database, err error){
+func (c *FmClient) GetDatabases() (databases []Database, err error) {
 	queryUrl := c.url + "/fmi/data/v2/databases"
 	req, err := http.NewRequest("GET", queryUrl, nil)
 	if err != nil {
@@ -178,14 +179,13 @@ func (c *FmClient) GetDatabases() (databases []Database, err error){
 	return reply.Response.Databases, nil
 }
 
-
-func (c *FmClient) GetLayouts(database string) (layouts []Layout, err error){
+func (c *FmClient) GetLayouts(database string) (layouts []Layout, err error) {
 	queryUrl := c.url + "/fmi/data/v2/databases/" + database + "/layouts"
 	req, err := http.NewRequest("GET", queryUrl, nil)
 	if err != nil {
 		return layouts, err
 	}
-	req.Header.Add("Authorization", "Bearer "+ c.token)
+	req.Header.Add("Authorization", "Bearer "+c.token)
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -209,32 +209,30 @@ func (c *FmClient) GetLayouts(database string) (layouts []Layout, err error){
 	return reply.Response.Layouts, nil
 }
 
-
 type Database struct {
 	Name string `json:"name"`
 }
 
 type Layout struct {
-	Name string `json:"name"`
-	IsFolder bool `json:"isFolder"`
+	Name     string `json:"name"`
+	IsFolder bool   `json:"isFolder"`
 }
 
-
 type FmReply struct {
-	Response struct{
-		DataInfo  struct {
+	Response struct {
+		DataInfo struct {
 			TotalRecordCount int `json:"totalRecordCount"`
 		} `json:"dataInfo"`
-		Data      []struct{
-			Id    string `json:"recordId"`
+		Data []struct {
+			Id     string                 `json:"recordId"`
 			Fields map[string]interface{} `json:"fieldData"`
 		}
-		Token     string `json:"token"`
+		Token     string     `json:"token"`
 		Databases []Database `json:"databases"`
 		Layouts   []Layout   `json:"layouts"`
 	} `json:"response"`
-	Messages []struct{
-		Code string `json:"code"`
+	Messages []struct {
+		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"messages"`
 }
