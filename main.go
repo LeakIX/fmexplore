@@ -36,7 +36,8 @@ func main() {
 		log.Printf("Found database %s", database.Name)
 		err = fmClient.AuthDatabase(database.Name)
 		if err != nil {
-			log.Fatalln(err)
+			log.Println(err)
+			continue
 		}
 		layouts, err := fmClient.GetLayouts(database.Name)
 		if err != nil {
